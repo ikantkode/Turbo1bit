@@ -1,38 +1,37 @@
 # Build artifacts
-build/
 *.o
+*.so
 *.a
-*.dylib
-*.metallib
-*.air
-
-# Models (too large for git)
-models/
-*.gguf
-*.bin
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Submodules managed separately
-bonsai-llama.cpp/
-turboquant/
+*.bc
+*.hsaco
 
 # Python
 __pycache__/
 *.pyc
-.venv/
+*.pyo
+*.pyd
+.Python
 venv/
+env/
 
-# Planning/scratch
-.planning/
-scratchpad*
-build-standalone/
+# Build directories
+build/
+rocblas-build/
+
+# Test binaries
+test_gpu_init
+test_gpu_init.c
+
+# Compiled kernels
+src/*.bc
+src/*.hsaco
+
+# Model files
+models/
+*.gguf
+
+# Logs
+*.log
+server_output.log
+llama_server.log
+

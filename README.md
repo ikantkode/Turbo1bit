@@ -4,119 +4,175 @@
 
 Turbo1Bit enables KV cache compression for [PrismML's Bonsai](https://github.com/PrismML-Eng/Bonsai-demo) 1-bit LLMs. By combining Flash Attention with quantized KV storage, it reduces inference memory by up to **4.24x** — making large models fit on small hardware.
 
-**Now with GPU acceleration support for Apple Metal and AMD ROCm (MI50/MI60)!**
+**Now with GPU acceleration support for Apple Metal and AMD ROCm!**
 
-## Headline Result (Measured)
+---
 
-**Bonsai-8B (8.2B parameters, 1-bit weights, 1.1 GB on disk)**
-
-| Context | Without Turbo1Bit | With Turbo1Bit | Saved |
-|---------|------------------|---------------|-------|
-| 8K | 2,379 MiB | 1,557 MiB | 822 MiB |
-| 32K | 5,891 MiB | 2,626 MiB | **3.3 GB** |
-| **65K** | **10,618 MiB** | **4,000 MiB** | **6.5 GB** |
-
-At 65K context, Bonsai-8B needs 10.4 GB — too large for 8GB hardware. With Turbo1Bit, it fits in **3.9 GB**.
-
-## GPU Acceleration
-
-Turbo1Bit now supports GPU acceleration for KV cache operations:
-
-- **Apple Silicon (Metal)**: Native support on M1/M2/M3 Macs
-- **AMD ROCm (HIP)**: Support for AMD GPUs including MI50/MI60
-
-GPU acceleration provides significant speedup for:
-- Attention scoring against compressed keys
-- Value dequantization
-- Fused decode attention with online softmax
-- Matrix-vector multiply for rotation/projection
-
-## Quick Start
+## 🚀 How to Run
 
 ### Apple Silicon (macOS)
 
 ```bash
-# Clone and build
+# 1. Clone and build
 git clone https://github.com/ikantkode/Turbo1bit.git
 cd Turbo1bit
 git clone --branch prism --depth 1 https://github.com/PrismML-Eng/llama.cpp.git bonsai-llama.cpp
 cd bonsai-llama.cpp && mkdir build && cd build
 cmake .. -G Ninja -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
-ninja turbo1bit-infer llama-bench llama-server
+ninja llama-server
 cd ../..
 
-# Download a model
+# 2. Download a model
 pip install huggingface_hub
-python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-8B-gguf', local_dir='models/Bonsai-8B-gguf', allow_patterns='*.gguf')"
+python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-1.7B-gguf', local_dir='models', allow_patterns='*.gguf')"
 
-# Run with auto-optimized settings
-./turbo1bit run models/Bonsai-8B-gguf/Bonsai-8B.gguf "Explain quantum computing:" -n 200 -c 8192
+# 3. Run the server
+cd bonsai-llama.cpp/build
+bin/llama-server -m ../../models/Bonsai-1.7B.gguf --port 8080 -c 8192
 ```
+
+**Access the web UI at:** http://localhost:8080
+
+---
 
 ### AMD GPU (Linux/ROCm)
 
-See the [AMD GPU Setup](#amd-gpu-setup-linux) section below for detailed instructions.
+Tested on AMD Radeon Instinct MI50 (gfx906).
 
 ```bash
-# After following AMD GPU setup (see below)
-export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
-cd /home/shakespear/bonsai/Turbo1bit/bonsai-llama.cpp/build
+# 1. Install dependencies (if needed)
+sudo apt update && sudo apt install -y git cmake build-essential python3-pip
 
-# Run server with GPU acceleration
+# 2. Clone and build
+git clone https://github.com/ikantkode/Turbo1bit.git
+cd Turbo1bit
+git clone --branch prism --depth 1 https://github.com/PrismML-Eng/llama.cpp.git bonsai-llama.cpp
+
+# 3. Download a model
+pip install huggingface_hub
+python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-1.7B-gguf', local_dir='models', allow_patterns='*.gguf')"
+
+# 4. Build llama.cpp with GPU support
+cd bonsai-llama.cpp
+mkdir build && cd build
+cmake .. -DGGML_HIP=ON -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc) llama-server
+
+# 5. Run the server with GPU acceleration
 bin/llama-server -m ../../models/Bonsai-1.7B.gguf --port 8080 --host 0.0.0.0 -c 8192 --n-gpu-layers 29
 ```
 
-## AMD GPU Setup (Linux)
+**Access the web UI at:** http://localhost:8080 or http://<your-ip>:8080
 
-This guide covers setting up Turbo1Bit with AMD GPU acceleration, specifically tested on **AMD Radeon Instinct MI50 (gfx906)**.
+> **Note:** If you get a `rocBLAS` error about missing gfx906 kernels, see the [AMD GPU Setup Guide](#amd-gpu-setup) below.
+
+---
+
+## 📊 Results
+
+### Memory Savings (Bonsai-8B)
+
+| Context | Standard | Turbo1Bit | **Saved** |
+|---------|----------|-----------|----------|
+| 8K tokens | 2,379 MiB | 1,557 MiB | **822 MiB** |
+| 32K tokens | 5,891 MiB | 2,626 MiB | **3.3 GB** |
+| **65K tokens** | 10,618 MiB | 4,000 MiB | **6.5 GB** |
+
+At 65K context, Bonsai-8B needs 10.6 GB — too large for 8GB hardware. With Turbo1Bit, it fits in **4 GB**.
+
+### Quality Impact (WikiText-2 Perplexity)
+
+| Config | Perplexity | vs Baseline |
+|--------|-----------|-------------|
+| FP16 + FA | **25.51** | baseline |
+| Q8_0 + FA | **25.49** | -0.1% ✅ |
+| Q4_0 + FA | **26.82** | +5.1% ✅ |
+
+Q8_0 is statistically identical to baseline. Q4_0 adds minimal perplexity for 2.91x memory savings.
+
+---
+
+## 🖥️ Installation
 
 ### Prerequisites
 
-- Ubuntu 24.04 (or similar Linux distribution)
-- AMD GPU supported by ROCm (MI50, MI60, etc.)
-- ROCm 7.0.0 or later installed
-- CMake (3.16+), Make, GCC/Clang
+- **CMake** 3.16 or later
+- **C++ compiler** (GCC, Clang, or Xcode)
+- **Python** 3.7+ with `pip`
+- **Git**
 
-### Step 1: Install ROCm
+### Platform-Specific Setup
 
-If ROCm is not already installed:
+#### macOS (Apple Silicon)
+
+Install Xcode Command Line Tools:
+```bash
+xcode-select --install
+```
+
+Then follow the [Apple Silicon Quick Start](#apple-silicon-macos) above.
+
+#### Linux with AMD GPU
+
+**Tested on:** Ubuntu 24.04, AMD MI50 (gfx906), ROCm 7.0
+
+**Basic Requirements:**
+- ROCm installed and working
+- AMD GPU supported by ROCm (MI50, MI60, MI100, etc.)
+
+**Quick Test - Check if ROCm works:**
+```bash
+rocm-smi
+/opt/rocm/bin/hipcc --version
+```
+
+If those commands work, you can skip to step 4 below. If you get errors about missing gfx906 kernels, continue to the full setup.
+
+---
+
+### AMD GPU Setup Guide (Detailed)
+
+This section provides detailed setup instructions for AMD GPUs. If the basic quick start above worked, you can skip this.
+
+#### Step 1: Install ROCm (if not already installed)
 
 ```bash
-# Download and install ROCm (adjust version as needed)
+# Download ROCm installer
 wget https://repo.radeon.com/amdgpu-install/6.0/ubuntu/jammy/amdgpu-install_6.0.60000_all.deb
+
+# Install ROCm
 sudo apt install -y ./amdgpu-install_6.0.60000_all.deb
 sudo amdgpu-install --usecase=rocm,hip --no-dkms
+
+# Verify installation
+rocm-smi
 ```
 
-### Step 2: Clone and Build Turbo1Bit
+#### Step 2: Clone the Repository
 
 ```bash
-# Clone Turbo1Bit repository
 git clone https://github.com/ikantkode/Turbo1bit.git
 cd Turbo1bit
-
-# Clone bonsai-llama.cpp fork
-git clone --branch prism --depth 1 https://github.com/PrismML-Eng/llama.cpp.git bonsai-llama.cpp
 ```
 
-### Step 3: Build Custom rocBLAS with gfx906 Support
+#### Step 3: Build Custom rocBLAS (for MI50/MI60 gfx906 support)
 
-**IMPORTANT:** The default ROCm installation may not include pre-compiled kernels for your GPU architecture (e.g., gfx906 for MI50). You need to build rocBLAS from source:
+**Why is this needed?** The default ROCm installation doesn't include pre-compiled kernels for all GPU architectures. This step builds rocBLAS from source with support for your specific GPU.
 
 ```bash
-# Create build directory for rocBLAS
+# Create build directory
 mkdir -p rocblas-build
 cd rocblas-build
 
 # Clone rocBLAS
 git clone https://github.com/ROCm/rocBLAS.git
 cd rocBLAS
-git checkout develop  # or a specific release tag
+git checkout develop
 
-# Create build directory
+# Build rocBLAS for your GPU
 mkdir build && cd build
 
-# Configure rocBLAS for your GPU architecture
+# Configure - replace gfx906:xnack- with your GPU architecture
 cmake -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_COMPILER=/opt/rocm-7.0.0/lib/llvm/bin/clang++ \
   -DGPU_TARGETS=gfx906:xnack- \
@@ -124,30 +180,31 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install \
   ..
 
-# Build rocBLAS (this will take several minutes)
+# Build (takes 5-10 minutes)
 make -j$(nproc)
 
-# Install rocBLAS
+# Install
 make install
 ```
 
-**Note:** Replace `gfx906:xnack-` with your GPU's architecture:
+**GPU Architecture Mapping:**
 - MI50/MI60: `gfx906:xnack-`
 - MI100: `gfx908:xnack-`
-- MI200: `gfx90a:xnack-`
+- MI200: `gfx90a:xnack+`
 - MI210: `gfx90a:xnack+`
 
-Check your GPU architecture with: `rocminfo | grep "Name:"`
+Check your GPU: `rocminfo | grep "Name:"`
 
-### Step 4: Build llama.cpp with HIP Support
+#### Step 4: Build llama.cpp with GPU Support
 
 ```bash
 cd /home/shakespear/bonsai/Turbo1bit/bonsai-llama.cpp
-rm -rf build
-mkdir build && cd build
+
+# Create build directory
+rm -rf build && mkdir build && cd build
 
 # Set library path for custom rocBLAS
-export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
 
 # Configure with HIP support
 cmake .. \
@@ -159,24 +216,28 @@ cmake .. \
 make -j$(nproc) llama-server
 ```
 
-### Step 5: Download a Model
+#### Step 5: Download a Model
 
 ```bash
 cd /home/shakespear/bonsai/Turbo1bit
 mkdir -p models
 
-# Using Python
+# Install huggingface_hub if needed
 pip install huggingface_hub
+
+# Download Bonsai-1.7B (or Bonsai-8B)
 python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-1.7B-gguf', local_dir='models', allow_patterns='*.gguf')"
 ```
 
-### Step 6: Run the Server
+#### Step 6: Run the Server
 
 ```bash
-export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
 cd /home/shakespear/bonsai/Turbo1bit/bonsai-llama.cpp/build
 
-# Start server with GPU layer offloading
+# Set library path
+export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+
+# Start server
 bin/llama-server \
   -m ../../models/Bonsai-1.7B.gguf \
   --port 8080 \
@@ -185,12 +246,12 @@ bin/llama-server \
   --n-gpu-layers 29
 ```
 
-**Key Parameters:**
-- `--n-gpu-layers 29`: Number of transformer layers to offload to GPU (29 = all layers for Bonsai-1.7B)
-- `--host 0.0.0.0`: Listen on all network interfaces (accessible from other devices)
-- `-c 8192`: Context size in tokens
+**What the flags mean:**
+- `--n-gpu-layers 29`: Offload all 29 layers to GPU (full GPU acceleration)
+- `--host 0.0.0.0`: Listen on all network interfaces
+- `-c 8192`: Context window of 8192 tokens
 
-### Step 7: Verify GPU Acceleration
+#### Step 7: Verify GPU Acceleration
 
 When the server starts, you should see:
 
@@ -205,29 +266,13 @@ Check GPU usage:
 rocm-smi
 ```
 
-### Troubleshooting
+You should see VRAM usage indicating the model is loaded on the GPU.
 
-**Issue:** `rocBLAS warning: No paths matched *gfx906*co`
+---
 
-**Solution:** Build rocBLAS from source as shown in Step 3. The default ROCm installation doesn't include pre-compiled kernels for all GPU architectures.
+## 🔧 Usage
 
-**Issue:** Server starts but inference fails with `CUBLAS_STATUS_INTERNAL_ERROR`
-
-**Solution:** Ensure your custom-built rocBLAS is in the library path:
-```bash
-export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
-```
-
-**Issue:** Model layers not offloading to GPU
-
-**Solution:**
-1. Check GPU architecture support: `rocminfo | grep "Name:"`
-2. Ensure `GPU_TARGETS` in rocBLAS build matches your GPU
-3. Verify with smaller `--n-gpu-layers` value first
-
-## Running Inference
-
-### Command Line
+### Command Line Interface
 
 ```bash
 cd /home/shakespear/bonsai/Turbo1bit/bonsai-llama.cpp/build
@@ -235,16 +280,16 @@ cd /home/shakespear/bonsai/Turbo1bit/bonsai-llama.cpp/build
 # Interactive mode
 bin/llama-cli \
   -m ../../models/Bonsai-1.7B.gguf \
-  -p "Explain quantum computing in simple terms:" \
+  -p "Explain quantum computing:" \
   -n 200 \
   -c 8192 \
   --n-gpu-layers 29
 ```
 
-### Web Server
+### Web Server (OpenAI-Compatible API)
 
 ```bash
-# Start OpenAI-compatible API server
+# Start server
 bin/llama-server \
   -m ../../models/Bonsai-1.7B.gguf \
   --port 8080 \
@@ -258,31 +303,62 @@ curl http://localhost:8080/v1/chat/completions \
   -d '{"model":"bonsai","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-Access the web UI at: `http://localhost:8080` or `http://<your-ip>:8080`
+**Access the web UI at:** http://localhost:8080
 
-## How It Works
+---
 
-llama.cpp has built-in KV cache quantization (`--ctk`, `--ctv`) and Flash Attention (`--fa`), but Bonsai's documentation and scripts don't use either. Trying KV quantization without FA produces a cryptic error, so most users assume it's unsupported. Turbo1Bit validated that the combination works with 1-bit models and measured the quality/memory trade-offs:
+## 🩹 Troubleshooting
 
-```text
-llama_init_from_model: quantized V cache was requested, but this requires Flash Attention
+### Issue: "rocBLAS warning: No paths matched *gfx906*co"
+
+**Solution:** Build rocBLAS from source as shown in [Step 3](#step-3-build-custom-rocblas-for-mi50mi60-gfx906-support). The default ROCm installation doesn't include pre-compiled kernels for all GPU architectures.
+
+### Issue: Server starts but inference fails
+
+**Solution:** Ensure your custom-built rocBLAS is in the library path:
+```bash
+export LD_LIBRARY_PATH=/home/shakespear/bonsai/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
 ```
 
-**Why does quantized V cache require Flash Attention?** Without FA, llama.cpp stores the V cache **transposed** — each row is a single element scattered across heads, which is incompatible with block quantization formats like Q4_0 (they need contiguous groups of 32 values). Flash Attention stores V non-transposed (contiguous per head), making quantization possible.
+### Issue: Model layers not offloading to GPU
 
-With `--fa on`, Q4_0/Q5_0/Q8_0 KV cache types work. This combination is undocumented in the Bonsai project and we validated quality for 1-bit models specifically.
+**Solution:**
+1. Check your GPU architecture: `rocminfo | grep "Name:"`
+2. Ensure `GPU_TARGETS` in rocBLAS build matches your GPU
+3. Try with fewer layers first: `--n-gpu-layers 5`
 
-Flash Attention also provides a **2.4x prefill speedup** as a bonus:
+### Issue: Port 8080 already in use
+
+**Solution:** Either stop the other process or use a different port:
+```bash
+bin/llama-server ... --port 8081
+```
+
+---
+
+## 📈 How It Works
+
+llama.cpp has built-in KV cache quantization and Flash Attention, but they need to be enabled together for 1-bit models. Turbo1Bit makes this easy:
+
+**The Secret Sauce:**
+1. **Flash Attention** stores KV cache non-transposed (contiguous)
+2. **KV Quantization** compresses the cache (Q4_0, Q8_0, etc.)
+3. Without FA → transposed storage → incompatible with quantization
+4. With FA → contiguous storage → quantization works!
+
+**Performance Bonus:** Flash Attention also provides a **2.4x prefill speedup**:
 
 | Mode | Prefill (tok/s) | Decode (tok/s) |
 |------|----------------|---------------|
-| No FA (original) | 1,425 | 134 |
+| No FA | 1,425 | 134 |
 | FA + FP16 KV | **3,452** | **151** |
 | FA + Q4_0 KV | **3,435** | **131** |
 
-## Full Benchmark Results
+---
 
-### Bonsai-1.7B (Measured RSS via `/usr/bin/time -l`)
+## 🧪 Benchmarks
+
+### Bonsai-1.7B Memory Usage (Measured RSS)
 
 | Context | FP16 | Q8_0 | Q5_0 | Q4_0 |
 |---------|------|------|------|------|
@@ -291,89 +367,48 @@ Flash Attention also provides a **2.4x prefill speedup** as a bonus:
 | 32K | 4,131 MiB | 2,454 MiB | 1,780 MiB | 1,555 MiB |
 | 65K | 7,846 MiB | 4,489 MiB | 3,142 MiB | 2,694 MiB |
 
-### Bonsai-8B (Measured RSS)
+### Bonsai-8B Memory Usage (Measured RSS)
 
 | Context | FP16 | Q4_0 | Saved |
 |---------|------|------|-------|
 | 2K | 1,592 MiB | 1,293 MiB | 299 MiB |
-| 8K | 2,379 MiB | 1,557 MiB | 822 MiB |
-| 32K | 5,891 MiB | 2,626 MiB | 3,265 MiB |
-| 65K | 10,618 MiB | 4,000 MiB | 6,618 MiB |
+| 8K | 2,379 MiB | 1,557 MiB | **822 MiB** |
+| 32K | 5,891 MiB | 2,626 MiB | **3.3 GB** |
+| **65K** | 10,618 MiB | 4,000 MiB | **6.5 GB** |
 
-### Output Quality — Perplexity (WikiText-2, Bonsai-1.7B, 20 chunks)
+---
 
-| Config | Perplexity | vs Baseline | Memory Saving |
-|--------|-----------|-------------|---------------|
-| FP16 + FA | **25.51** | — | 1x |
-| Q8_0 + FA | **25.49** | -0.1% | 1.75x |
-| Q5_0 + FA | **25.87** | +1.4% | 2.50x |
-| Q4_0 + FA | **26.82** | +5.1% | 2.91x |
-
-Q8_0 is statistically identical to baseline. Q4_0 adds 5% perplexity for 2.91x memory savings.
-
-## What Turbo1Bit Includes
-
-| Component | Description |
-|-----------|-------------|
-| `turbo1bit` | Simple wrapper script with auto RAM detection |
-| `turbo1bit-server` | OpenAI-compatible API server with compressed KV cache |
-| `turbo1bit-infer` | Non-interactive inference tool with KV compression flags |
-| TurboQuant C port | Lloyd-Max codebooks, orthogonal rotation, QJL projection, group quantization |
-| Metal shaders | 6 GPU kernels for compressed KV attention (Apple Silicon) |
-| HIP kernels | 6 GPU kernels for compressed KV attention (AMD ROCm) |
-| Quality sweep | Tested key compression at 3/4/5 bits, value compression at 2/4 bits |
-| Benchmark suite | `turbo1bit-bench`, `turbo1bit-stress` for standalone KV cache testing |
-
-### TurboQuant Compression Research
-
-Beyond the native KV quantization, Turbo1Bit includes a C port of the [TurboQuant](https://github.com/0xSero/turboquant) (ICLR 2026) compression algorithms. Key findings for 1-bit models:
-
-- **2-bit value compression**: Lossless — output identical to baseline
-- **4-bit key compression**: Good quality — coherent text with minor rephrasings
-- **3-bit key compression**: Too aggressive — output degrades to gibberish
-- **Threshold**: 1-bit models need >= 4-bit keys (FP16 models can use 3-bit)
-
-## Project Structure
+## 🏗️ Project Structure
 
 ```text
 Turbo1bit/
-├── turbo1bit                    # Simple wrapper script
-├── turbo1bit-server             # OpenAI-compatible API server
-├── src/                         # TurboQuant C port
-│   ├── turbo1bit_codebook.h/c   # Lloyd-Max optimal codebooks
-│   ├── turbo1bit_rotation.h/c   # QR rotation + QJL projection
-│   ├── turbo1bit_quantizer.h/c  # MSE + Prod quantizers
-│   ├── turbo1bit_kv_cache.h/c   # Compressed KV cache manager
-│   ├── turbo1bit_metal.h/m      # Metal GPU host code (Apple Silicon)
-│   ├── turbo1bit_hip.cpp        # HIP GPU host code (AMD ROCm)
-│   └── turbo1bit_hip_kernels.hip # HIP compute shaders (AMD ROCm)
-├── tools/turbo1bit/
-│   ├── turbo1bit_infer.cpp      # End-to-end inference tool
-│   ├── turbo1bit_bench.c        # Core algorithm benchmarks
-│   └── turbo1bit_stress.c       # Extreme context stress test
-├── BENCHMARKS.md                # Detailed benchmark data
-├── rocblas-build/               # Custom rocBLAS build (AMD GPU)
-└── CMakeLists.txt               # Standalone build
+├── README.md                   # This file
+├── CLAUDE.md                   # Development guide
+├── CMakeLists.txt              # Main build configuration
+├── turbo1bit                   # Wrapper script (auto-detects platform)
+├── turbo1bit-server            # Server wrapper
+├── src/                        # TurboQuant C implementation
+│   ├── turbo1bit_*.h/c        # Quantization algorithms
+│   ├── turbo1bit_metal.*      # Metal GPU code (Apple Silicon)
+│   └── turbo1bit_hip.*        # HIP GPU code (AMD ROCm)
+├── tools/turbo1bit/            # CLI tools
+│   ├── turbo1bit_bench.c      # Benchmarking
+│   └── turbo1bit_stress.c     # Stress testing
+├── bonsai-llama.cpp/          # Forked llama.cpp
+└── rocblas-build/             # Custom rocBLAS (AMD GPU)
 ```
 
-## GPU Kernels
+---
 
-Turbo1Bit includes GPU-accelerated kernels for:
+## 🤝 Credits
 
-1. **MSE Score**: Computes attention scores against MSE-quantized keys
-2. **QJL Score**: Adds QJL residual contribution to scores
-3. **Fused Attention**: Full fused decode attention with online softmax
-4. **Value Dequantization**: Unpack and dequantize group-quantized values
-5. **Value Quantize-Dequantize**: In-place value quantization roundtrip
-6. **Matrix-Vector Multiply**: For rotation and projection operations
-
-## Credits
-
-- **[Bonsai / PrismML](https://github.com/PrismML-Eng/Bonsai-demo)** — 1-bit LLM models and inference
-- **[TurboQuant](https://github.com/0xSero/turboquant)** by 0xSero — KV cache compression algorithms (ICLR 2026)
+- **[Bonsai / PrismML](https://github.com/PrismML-Eng/Bonsai-demo)** — 1-bit LLM models
+- **[TurboQuant](https://github.com/0xSero/turboquant)** — KV cache compression algorithms (ICLR 2026)
 - **[llama.cpp](https://github.com/ggerganov/llama.cpp)** — C/C++ LLM inference engine
-- **[ROCm](https://github.com/ROCm/ROCm)** — AMD open-source GPU computing platform
+- **[ROCm](https://github.com/ROCm)** — AMD open-source GPU computing platform
 
-## License
+---
+
+## 📜 License
 
 GPL-3.0

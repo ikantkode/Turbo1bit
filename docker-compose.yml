@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  turbo1bit:
+    build: .
+    image: ikantkode/turbo1bit:mi50-latest
+    container_name: turbo1bit-mi50
+    ports:
+      - "8080:8080"
+    environment:
+      - LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocblas/lib
+      - MODEL_PATH=/app/models/Bonsai-1.7B.gguf
+      - GPU_LAYERS=29
+      - CONTEXT_SIZE=8192
+    volumes:
+      # Uncomment to persist models across container rebuilds
+      # - ./models:/app/models
+      # Uncomment to use different model from host
+      # - /path/to/your/models:/app/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: hip
+              device_ids: ['0']
+        limits:
+          memory: 32G
+    restart: unless-stopped
+    ipc: host
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    # Pass through ROCm devices
+    group_add:
+      - video
+    devices:
+      - /dev/kfd
+      - /dev/dri
+      - /dev/dri/card0
+    # Alternative for newer docker-compose with device access
+    # device_requests:
+    #   - driver: hip
+    #     count: 1
+    #     capabilities: [gpu]
+
+  # Optional: Add monitoring with Prometheus
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: turbo1bit-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  #   restart: unless-stopped

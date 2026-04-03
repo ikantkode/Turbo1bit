@@ -64,7 +64,34 @@ bin/llama-server -m ../../models/Bonsai-1.7B.gguf --port 8080 --host 0.0.0.0 -c 
 
 **Access the web UI at:** http://localhost:8080 or http://<your-ip>:8080
 
-> **Note:** If you get a `rocBLAS` error about missing gfx906 kernels, see the [AMD GPU Setup Guide](#amd-gpu-setup) below.
+---
+
+### 🐳 Docker (AMD MI50 - Easiest Method)
+
+The fastest way to get started with AMD MI50 is using Docker:
+
+```bash
+# Clone the repository
+git clone https://github.com/ikantkode/Turbo1bit.git
+cd Turbo1bit
+
+# Build and run with Docker (takes 20-30 minutes to build)
+docker-compose up -d
+
+# The server will be available at http://localhost:8080
+```
+
+**That's it!** Docker handles:
+- ✅ Installing all dependencies
+- ✅ Building rocBLAS from source for gfx906
+- ✅ Building llama.cpp with GPU support
+- ✅ Downloading the Bonsai model
+- ✅ Configuring GPU access
+- ✅ Starting the server
+
+For detailed Docker documentation, see [DOCKER.md](DOCKER.md).
+
+> **Note:** Requires Docker 24.0+ with ROCm support and AMD MI50 GPU with ROCm drivers installed.
 
 ---
 

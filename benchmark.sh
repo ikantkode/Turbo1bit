@@ -55,10 +55,18 @@ echo "Using model: $MODEL_FILE"
 # ── 2. Build if needed ──────────────────────────────────────────────
 
 echo -e "\n${YELLOW}[2/5] Building binaries...${NC}"
+
+# Detect platform and set GPU flags
+if [[ "$(uname)" == "Darwin" ]]; then
+    GPU_FLAGS="-DGGML_METAL=ON"
+else
+    GPU_FLAGS="-DGGML_HIPBLAS=ON -DCMAKE_HIP_COMPILER=/opt/rocm/bin/hipcc -DCMAKE_HIP_ARCHITECTURES=gfx906"
+fi
+
 if [ ! -f "$LLAMA_BIN" ] || [ ! -f "$BENCH_BIN" ]; then
     cd "$SCRIPT_DIR/bonsai-llama.cpp"
     mkdir -p build && cd build
-    cmake .. -G Ninja -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
+    cmake .. -G Ninja $GPU_FLAGS -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
     ninja llama-cli turbo1bit-bench turbo1bit-stress llama-perplexity 2>&1 | tail -5
     cd "$SCRIPT_DIR"
 fi

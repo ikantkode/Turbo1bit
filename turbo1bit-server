@@ -84,12 +84,27 @@ if [[ -z "$MODEL" ]]; then
     exit 1
 fi
 
+# Detect platform and set GPU flags
+get_gpu_cmake_flags() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS: Use Metal
+        echo "-DGGML_METAL=ON"
+    else
+        # Linux: Use ROCm/HIP for AMD GPUs
+        echo "-DGGML_HIPBLAS=ON -DCMAKE_HIP_COMPILER=/opt/rocm/bin/hipcc -DCMAKE_HIP_ARCHITECTURES=gfx906"
+    fi
+}
+
 # Check server binary
 if [[ ! -f "$SERVER_BIN" ]]; then
     echo -e "${YELLOW}Building llama-server...${NC}"
     cd "$SCRIPT_DIR/bonsai-llama.cpp"
     mkdir -p build && cd build
-    cmake .. -G Ninja -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON 2>/dev/null
+
+    # Get platform-specific GPU flags
+    GPU_FLAGS=$(get_gpu_cmake_flags)
+
+    cmake .. -G Ninja $GPU_FLAGS -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON 2>/dev/null
     ninja llama-server 2>&1 | tail -3
     cd "$SCRIPT_DIR"
 fi

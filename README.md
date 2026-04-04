@@ -150,7 +150,7 @@ export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
 |-------|--------|------|--------|-------------|------------|-------------|-------|---------|
 | **Bonsai-1.7B** | 1.7B | 237 MB | 24 | 65,536 | **29** | ~9.3 GB | 🚀 Fastest | ⭐ Basic |
 | **Bonsai-4B** | 4.0B | 546 MB | 36 | 32,768 | **37** | ~5.2 GB | ⚡ Fast | ⭐⭐ Good |
-| **Bonsai-8B** | 8.2B | 1.15 GB | 36 | 65,536 | **40** | ~15.6 GB | 🐢 Slowest | ⭐⭐⭐ Best |
+| **Bonsai-8B** | 8.2B | 1.15 GB | 36 | 65,536 | **37** | ~15.6 GB | 🐢 Slowest | ⭐⭐⭐ Best |
 
 **Recommended for 32GB MI50:** Bonsai-4B (best balance of speed and quality)
 
@@ -200,7 +200,7 @@ export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
   --port 8080 \
   --host 0.0.0.0 \
   -c 65536 \
-  --n-gpu-layers 40
+  --n-gpu-layers 37
 ```
 
 ---
@@ -339,7 +339,7 @@ The context length (`-c` flag) determines how much text the model can remember. 
 |-------|--------------|---------------------|
 | Bonsai-1.7B | 29 | **29** |
 | Bonsai-4B | 37 | **37** |
-| Bonsai-8B | 40 | **40** |
+| Bonsai-8B | 37 | **37** |
 
 **⚠️ Important:** Using fewer GPU layers than total will leave some layers on CPU, causing **massive slowdown** (10x slower or more). Always use the exact values above!
 
@@ -418,7 +418,7 @@ All three models fit comfortably on 32GB VRAM with headroom to spare!
 **Solution:** Check the logs for `offloaded X/Y layers`. If X < Y, increase `--n-gpu-layers`:
 - Bonsai-1.7B: Use `--n-gpu-layers 29`
 - Bonsai-4B: Use `--n-gpu-layers 37`
-- Bonsai-8B: Use `--n-gpu-layers 40`
+- Bonsai-8B: Use `--n-gpu-layers 37`
 
 ### "failed to open GGUF file"
 

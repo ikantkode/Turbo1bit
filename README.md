@@ -4,19 +4,20 @@
 
 Turbo1Bit enables KV cache compression for [PrismML's Bonsai](https://github.com/PrismML-Eng/Bonsai-demo) 1-bit LLMs. By combining Flash Attention with quantized KV storage, it reduces inference memory by up to **4.24x** — making large models fit on smaller hardware.
 
-**This guide is specifically for AMD Radeon Instinct MI50 (gfx906) with ROCm.**
+**This guide is specifically for AMD Radeon Instinct MI50 (gfx906) with ROCm on a 32GB VRAM system.**
 
 ---
 
-## Quick Start - Fresh Repo Deployment
+## Quick Start - Fresh Deployment (32GB MI50)
 
 ### Prerequisites
 
 - Ubuntu 24.04 (or similar Linux distribution)
-- AMD MI50 GPU with ROCm drivers installed
+- AMD MI50 GPU with **32GB VRAM**
+- ROCm drivers installed
 - Git, CMake, build-essential, Python 3
 
-### Step 1: Clone and Setup
+### Step 1: Clone Repository
 
 ```bash
 # Clone the repository
@@ -76,6 +77,7 @@ make install
 ### Step 4: Build llama.cpp
 
 ```bash
+# Replace /path/to with your actual path
 cd /path/to/Turbo1bit/bonsai-llama.cpp
 
 # Set library path for custom rocBLAS
@@ -90,8 +92,8 @@ cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/Turbo1bit/rocblas-build/install
 
-# Build the server
-make -j$(nproc) llama-server
+# Build the server and CLI tools
+make -j$(nproc) llama-server llama-cli
 ```
 
 ### Step 5: Download Models
@@ -103,75 +105,89 @@ mkdir -p models
 # Install huggingface_hub
 pip install huggingface_hub
 
-# Download Bonsai-1.7B (faster, less memory)
+# Download Bonsai-1.7B (237 MB, 65K context, fastest)
 python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-1.7B-gguf', local_dir='models', allow_patterns='*.gguf')"
 
-# OR download Bonsai-8B (smarter, more memory)
+# OR download Bonsai-4B (546 MB, 32K context, balanced)
+python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-4B-gguf', local_dir='models', allow_patterns='*.gguf')"
+
+# OR download Bonsai-8B (1.15 GB, 65K context, smartest)
 python3 -c "from huggingface_hub import snapshot_download; snapshot_download('prism-ml/Bonsai-8B-gguf', local_dir='models', allow_patterns='*.gguf')"
 ```
+
+**Note:** You can download all three models and switch between them as needed.
 
 ### Step 6: Start the Server
 
 ```bash
 cd /path/to/Turbo1bit/bonsai-llama.cpp/build
 
-# Set library path
+# Set library path (run this every time you open a new terminal)
 export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
 
-# Start server (adjust flags as needed)
+# Start with Bonsai-4B (recommended for 32GB MI50)
 ./bin/llama-server \
-  -m ../../models/Bonsai-1.7B.gguf \
+  -m ../../models/Bonsai-4B.gguf \
   --port 8080 \
   --host 0.0.0.0 \
-  -c 8192 \
-  --n-gpu-layers 29
+  -c 32768 \
+  --n-gpu-layers 37
 ```
 
 **Access the web UI at:** http://localhost:8080 or http://<your-ip>:8080
 
 ---
 
-## Managing Models and Context
+## Model Comparison
 
-### Switching Between Models
+| Model | Params | Size | Layers | Max Context | GPU Layers | VRAM at Max | Speed | Quality |
+|-------|--------|------|--------|-------------|------------|-------------|-------|---------|
+| **Bonsai-1.7B** | 1.7B | 237 MB | 24 | 65,536 | **29** | ~9.3 GB | 🚀 Fastest | ⭐ Basic |
+| **Bonsai-4B** | 4.0B | 546 MB | 36 | 32,768 | **37** | ~5.2 GB | ⚡ Fast | ⭐⭐ Good |
+| **Bonsai-8B** | 8.2B | 1.15 GB | 36 | 65,536 | **40** | ~15.6 GB | 🐢 Slowest | ⭐⭐⭐ Best |
 
-Stop the current server and start with a different model:
+**Recommended for 32GB MI50:** Bonsai-4B (best balance of speed and quality)
+
+---
+
+## Switching Models
+
+### Stop Current Server
 
 ```bash
-# Find and stop the running server
+# Find the server process
 ps aux | grep llama-server
+
+# Kill the process (replace <PID> with actual process ID)
 kill <PID>
 
-# Start with 1.7B model (29 layers, faster, less VRAM)
+# OR kill all llama-server processes
+pkill -f llama-server
+```
+
+### Start Different Model
+
+```bash
+cd /path/to/Turbo1bit/bonsai-llama.cpp/build
+export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+
+# Bonsai-1.7B - Fastest, 65K context
 ./bin/llama-server \
   -m ../../models/Bonsai-1.7B.gguf \
   --port 8080 \
   --host 0.0.0.0 \
-  -c 8192 \
+  -c 65536 \
   --n-gpu-layers 29
 
-# OR start with 8B model (36 layers, smarter, more VRAM)
+# Bonsai-4B - Balanced, 32K context (RECOMMENDED)
 ./bin/llama-server \
-  -m ../../models/Bonsai-8B.gguf \
+  -m ../../models/Bonsai-4B.gguf \
   --port 8080 \
   --host 0.0.0.0 \
-  -c 8192 \
-  --n-gpu-layers 40
-```
+  -c 32768 \
+  --n-gpu-layers 37
 
-### Adjusting Context Length
-
-The context length (`-c` flag) determines how much text the model can remember. Higher values use more VRAM.
-
-| Context | 1.7B VRAM | 8B VRAM | Use Case |
-|---------|-----------|---------|----------|
-| 2,048 | ~300 MB | ~500 MB | Quick chats, simple tasks |
-| 8,192 | ~1.1 GB | ~1.8 GB | Standard conversations |
-| 32,768 | ~4.5 GB | ~7.2 GB | Long documents, code analysis |
-| **65,536** | ~9.0 GB | ~14.4 GB | **Maximum (entire books)** |
-
-**Example: Run 8B with maximum context**
-```bash
+# Bonsai-8B - Smartest, 65K context
 ./bin/llama-server \
   -m ../../models/Bonsai-8B.gguf \
   --port 8080 \
@@ -180,15 +196,145 @@ The context length (`-c` flag) determines how much text the model can remember. 
   --n-gpu-layers 40
 ```
 
-### Other Useful Flags
+---
+
+## Calling Inference
+
+### Web UI (Easiest)
+
+Open your browser and go to: **http://localhost:8080**
+
+### OpenAI-Compatible API
+
+#### Chat Completion
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "bonsai",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Explain quantum computing in simple terms."}
+    ],
+    "max_tokens": 256,
+    "temperature": 0.5,
+    "top_p": 0.85,
+    "top_k": 20
+  }'
+```
+
+#### Completion (Text Generation)
+
+```bash
+curl http://localhost:8080/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "bonsai",
+    "prompt": "Once upon a time",
+    "max_tokens": 128,
+    "temperature": 0.7
+  }'
+```
+
+### Python Example
+
+```python
+import requests
+
+url = "http://localhost:8080/v1/chat/completions"
+headers = {"Content-Type": "application/json"}
+
+data = {
+    "model": "bonsai",
+    "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Write a haiku about AI."}
+    ],
+    "max_tokens": 100,
+    "temperature": 0.5
+}
+
+response = requests.post(url, headers=headers, json=data)
+print(response.json()['choices'][0]['message']['content'])
+```
+
+### Command Line Interface
+
+```bash
+cd /path/to/Turbo1bit/bonsai-llama.cpp/build
+export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+
+# Interactive mode
+./bin/llama-cli \
+  -m ../../models/Bonsai-4B.gguf \
+  -p "Explain quantum computing:" \
+  -n 256 \
+  -c 8192 \
+  --n-gpu-layers 37
+
+# Interactive chat
+./bin/llama-cli \
+  -m ../../models/Bonsai-4B.gguf \
+  -cnv \
+  -c 8192 \
+  --n-gpu-layers 37 \
+  -ngl 37
+```
+
+---
+
+## Context Length Guide
+
+The context length (`-c` flag) determines how much text the model can remember. Higher values use more VRAM.
+
+### Recommended Context for 32GB MI50
+
+| Context | 1.7B VRAM | 4B VRAM | 8B VRAM | Use Case |
+|---------|-----------|---------|---------|----------|
+| 2,048 | ~300 MB | ~500 MB | ~800 MB | Quick chats |
+| 8,192 | ~1.1 GB | ~1.8 GB | ~3.0 GB | Standard conversations |
+| 16,384 | ~2.3 GB | ~3.6 GB | ~5.9 GB | Long documents |
+| **32,768** | ~4.5 GB | **~7.2 GB** | ~11.8 GB | **Recommended for 4B** |
+| **65,536** | **~9.0 GB** | ~14.4 GB (exceeds 32K limit) | **~23.6 GB** | **Max for 1.7B/8B** |
+
+**Important:** Bonsai-4B has a maximum context of **32,768 tokens**. Don't use `-c 65536` with 4B!
+
+### Example: Different Context Lengths
+
+```bash
+# Low memory usage (8K context)
+./bin/llama-server -m ../../models/Bonsai-4B.gguf -c 8192 --n-gpu-layers 37
+
+# Balanced (16K context)
+./bin/llama-server -m ../../models/Bonsai-4B.gguf -c 16384 --n-gpu-layers 37
+
+# Maximum for 4B (32K context)
+./bin/llama-server -m ../../models/Bonsai-4B.gguf -c 32768 --n-gpu-layers 37
+```
+
+---
+
+## Server Flags Reference
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `--port` | Change server port | `--port 8081` |
-| `--host` | Network interface | `--host 0.0.0.0` (all) or `--host 127.0.0.1` (local only) |
-| `--n-gpu-layers` | Layers to offload to GPU | `29` for 1.7B, `40` for 8B |
-| `-c` | Context length | `8192`, `32768`, `65536` |
+| `-m` | Model path | `-m ../../models/Bonsai-4B.gguf` |
+| `--port` | Server port | `--port 8080` |
+| `--host` | Network interface | `--host 0.0.0.0` (all) or `--host 127.0.0.1` (local) |
+| `-c` | Context length | `-c 32768` |
+| `--n-gpu-layers` | Layers to offload to GPU | `--n-gpu-layers 37` (see table below) |
 | `--no-warmup` | Skip warmup (faster startup) | `--no-warmup` |
+
+### Critical: Correct GPU Layer Counts
+
+| Model | Total Layers | Use `--n-gpu-layers` |
+|-------|--------------|---------------------|
+| Bonsai-1.7B | 29 | **29** |
+| Bonsai-4B | 37 | **37** |
+| Bonsai-8B | 40 | **40** |
+
+**⚠️ Important:** Using fewer GPU layers than total will leave some layers on CPU, causing **massive slowdown** (10x slower or more). Always use the exact values above!
 
 ---
 
@@ -199,11 +345,9 @@ The context length (`-c` flag) determines how much text the model can remember. 
 curl http://localhost:8080/health
 ```
 
-### Test Inference
+### Check Model Info
 ```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"bonsai","messages":[{"role":"user","content":"Hello!"}]}'
+curl http://localhost:8080/v1/models
 ```
 
 ### Check GPU Usage
@@ -211,42 +355,44 @@ curl http://localhost:8080/v1/chat/completions \
 rocm-smi
 ```
 
-### View Server Logs
+### Restart Server
 ```bash
-# If you redirected output to a log file
-tail -f /tmp/server-8b.log
-```
+# Stop
+pkill -f llama-server
 
-### Restart Server with Different Settings
-```bash
-# Stop current server
-ps aux | grep llama-server | grep -v grep | awk '{print $2}' | xargs kill
-
-# Start with new settings
+# Start
 cd /path/to/Turbo1bit/bonsai-llama.cpp/build
 export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
-./bin/llama-server -m ../../models/Bonsai-8B.gguf --port 8080 --host 0.0.0.0 -c 65536 --n-gpu-layers 40
+./bin/llama-server -m ../../models/Bonsai-4B.gguf --port 8080 --host 0.0.0.0 -c 32768 --n-gpu-layers 37
+```
+
+### View Server Logs
+```bash
+# If you started server with log redirection
+tail -f /tmp/server-4b.log
 ```
 
 ---
 
-## Memory Usage Examples
+## Performance Benchmarks
 
-### Bonsai-1.7B (29 layers)
+### Speed (Tokens Per Second) on MI50
 
-| Context | Model | KV Cache | Total VRAM |
-|---------|-------|----------|------------|
-| 8K | 250 MB | 1.1 GB | ~1.4 GB |
-| 32K | 250 MB | 4.5 GB | ~4.8 GB |
-| 65K | 250 MB | 9.0 GB | ~9.3 GB |
+| Model | Context | Prefill | Decode |
+|-------|---------|---------|--------|
+| Bonsai-1.7B | 32K | ~90 tok/s | ~130 tok/s |
+| **Bonsai-4B** | 32K | ~70 tok/s | **~105 tok/s** |
+| Bonsai-8B | 32K | ~50 tok/s | ~70 tok/s |
 
-### Bonsai-8B (36 layers)
+### Memory Usage (32GB MI50)
 
-| Context | Model | KV Cache | Total VRAM |
-|---------|-------|----------|------------|
-| 8K | 1.15 GB | 1.8 GB | ~3.0 GB |
-| 32K | 1.15 GB | 7.2 GB | ~8.4 GB |
-| 65K | 1.15 GB | 14.4 GB | ~15.6 GB |
+| Model | Weights | KV Cache (32K) | Total |
+|-------|---------|----------------|-------|
+| Bonsai-1.7B | 237 MB | 4.5 GB | ~4.8 GB |
+| **Bonsai-4B** | 546 MB | 4.5 GB | **~5.1 GB** |
+| Bonsai-8B | 1.15 GB | 4.5 GB | ~5.7 GB |
+
+All three models fit comfortably on 32GB VRAM with headroom to spare!
 
 ---
 
@@ -258,23 +404,27 @@ export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/li
 
 **Solution:** Build rocBLAS from source as shown in Step 3.
 
-### Server starts but inference fails
+### Server starts but inference is very slow (~15 tok/s instead of 100+)
 
-**Cause:** Wrong library path.
+**Cause:** Not all layers are on GPU.
 
-**Solution:**
-```bash
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
-```
+**Solution:** Check the logs for `offloaded X/Y layers`. If X < Y, increase `--n-gpu-layers`:
+- Bonsai-1.7B: Use `--n-gpu-layers 29`
+- Bonsai-4B: Use `--n-gpu-layers 37`
+- Bonsai-8B: Use `--n-gpu-layers 40`
 
-### Model layers not offloading to GPU
+### "failed to open GGUF file"
 
-**Cause:** Mismatched GPU architecture.
+**Cause:** Wrong model path.
 
-**Solution:**
-1. Check your GPU: `rocminfo | grep "Name:"`
-2. Ensure `GPU_TARGETS=gfx906:xnack-` in rocBLAS build
-3. Try with fewer layers: `--n-gpu-layers 5`
+**Solution:** Use absolute path: `-m /path/to/Turbo1bit/models/Bonsai-4B.gguf`
+
+### Out of memory errors
+
+**Solutions:**
+1. Reduce context length: `-c 16384` instead of `-c 32768`
+2. Use smaller model (1.7B instead of 8B)
+3. Close other GPU-intensive applications
 
 ### Port 8080 already in use
 
@@ -282,13 +432,6 @@ export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/li
 ```bash
 ./bin/llama-server ... --port 8081
 ```
-
-### Out of memory errors
-
-**Solutions:**
-1. Reduce context length: `-c 32768` instead of `-c 65536`
-2. Use 1.7B model instead of 8B
-3. Reduce GPU layers: `--n-gpu-layers 20`
 
 ---
 
@@ -311,15 +454,15 @@ Turbo1Bit leverages llama.cpp's built-in KV cache compression and Flash Attentio
 
 ---
 
-## Benchmarks
+## Quality Benchmarks
 
-### Bonsai-8B Memory Usage (Measured RSS)
+### Bonsai-4B Memory Usage (Measured RSS)
 
-| Context | Standard | Compressed | **Saved** |
-|---------|----------|------------|----------|
-| 8K tokens | 2,379 MiB | 1,557 MiB | **822 MiB** |
-| 32K tokens | 5,891 MiB | 2,626 MiB | **3.3 GB** |
-| **65K tokens** | 10,618 MiB | 4,000 MiB | **6.5 GB** |
+| Context | FP16 | Compressed | **Saved** |
+|---------|------|------------|----------|
+| 8K tokens | 1,537 MiB | 620 MiB | **917 MiB** |
+| 16K tokens | 2,832 MiB | 1,071 MiB | **1.8 GB** |
+| **32K tokens** | 5,422 MiB | 2,004 MiB | **3.4 GB** |
 
 ### Quality Impact (WikiText-2 Perplexity)
 
@@ -354,8 +497,12 @@ Turbo1bit/
 │       └── bin/
 │           ├── llama-server   # Web server
 │           └── llama-cli      # CLI interface
-└── rocblas-build/             # Custom rocBLAS (required for MI50)
-    └── install/               # Built libraries
+├── rocblas-build/             # Custom rocBLAS (required for MI50)
+│   └── install/               # Built libraries
+└── models/                    # Downloaded models (NOT in git)
+    ├── Bonsai-1.7B.gguf      # Downloaded separately
+    ├── Bonsai-4B.gguf        # Downloaded separately
+    └── Bonsai-8B.gguf        # Downloaded separately
 ```
 
 ---

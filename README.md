@@ -10,6 +10,8 @@ Turbo1Bit enables KV cache compression for [PrismML's Bonsai](https://github.com
 
 ## Quick Start - Fresh Deployment (32GB MI50)
 
+**Important:** All commands below assume you are working from within the `Turbo1bit` directory. After cloning, run `cd Turbo1bit` and all paths will be relative to that directory.
+
 ### Prerequisites
 
 - Ubuntu 24.04 (or similar Linux distribution)
@@ -77,11 +79,11 @@ make install
 ### Step 4: Build llama.cpp
 
 ```bash
-# Replace /path/to with your actual path
-cd /path/to/Turbo1bit/bonsai-llama.cpp
+# You should be in the Turbo1bit directory
+cd bonsai-llama.cpp
 
 # Set library path for custom rocBLAS
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+export LD_LIBRARY_PATH=$(pwd)/../rocblas-build/install/lib:/opt/rocm/lib
 
 # Create build directory
 rm -rf build && mkdir build && cd build
@@ -90,7 +92,7 @@ rm -rf build && mkdir build && cd build
 cmake .. \
   -DGGML_HIP=ON \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH=/path/to/Turbo1bit/rocblas-build/install
+  -DCMAKE_PREFIX_PATH=$(pwd)/../../rocblas-build/install
 
 # Build the server and CLI tools
 make -j$(nproc) llama-server llama-cli
@@ -99,7 +101,10 @@ make -j$(nproc) llama-server llama-cli
 ### Step 5: Download Models
 
 ```bash
-cd /path/to/Turbo1bit
+# Go back to Turbo1bit directory
+cd ..
+
+# Create models directory
 mkdir -p models
 
 # Install huggingface_hub
@@ -120,10 +125,11 @@ python3 -c "from huggingface_hub import snapshot_download; snapshot_download('pr
 ### Step 6: Start the Server
 
 ```bash
-cd /path/to/Turbo1bit/bonsai-llama.cpp/build
+# Navigate to build directory (from Turbo1bit root)
+cd bonsai-llama.cpp/build
 
 # Set library path (run this every time you open a new terminal)
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
 
 # Start with Bonsai-4B (recommended for 32GB MI50)
 ./bin/llama-server \
@@ -168,8 +174,9 @@ pkill -f llama-server
 ### Start Different Model
 
 ```bash
-cd /path/to/Turbo1bit/bonsai-llama.cpp/build
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+# From Turbo1bit directory
+cd bonsai-llama.cpp/build
+export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
 
 # Bonsai-1.7B - Fastest, 65K context
 ./bin/llama-server \
@@ -262,8 +269,9 @@ print(response.json()['choices'][0]['message']['content'])
 ### Command Line Interface
 
 ```bash
-cd /path/to/Turbo1bit/bonsai-llama.cpp/build
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+# From Turbo1bit directory
+cd bonsai-llama.cpp/build
+export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
 
 # Interactive mode
 ./bin/llama-cli \
@@ -278,8 +286,7 @@ export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/li
   -m ../../models/Bonsai-4B.gguf \
   -cnv \
   -c 8192 \
-  --n-gpu-layers 37 \
-  -ngl 37
+  --n-gpu-layers 37
 ```
 
 ---
@@ -360,9 +367,9 @@ rocm-smi
 # Stop
 pkill -f llama-server
 
-# Start
-cd /path/to/Turbo1bit/bonsai-llama.cpp/build
-export LD_LIBRARY_PATH=/path/to/Turbo1bit/rocblas-build/install/lib:/opt/rocm/lib
+# Start (from Turbo1bit directory)
+cd bonsai-llama.cpp/build
+export LD_LIBRARY_PATH=$(pwd)/../../rocblas-build/install/lib:/opt/rocm/lib
 ./bin/llama-server -m ../../models/Bonsai-4B.gguf --port 8080 --host 0.0.0.0 -c 32768 --n-gpu-layers 37
 ```
 
@@ -417,7 +424,12 @@ All three models fit comfortably on 32GB VRAM with headroom to spare!
 
 **Cause:** Wrong model path.
 
-**Solution:** Use absolute path: `-m /path/to/Turbo1bit/models/Bonsai-4B.gguf`
+**Solution:** Make sure you're in the correct directory and using the right path:
+```bash
+# From Turbo1bit directory
+cd bonsai-llama.cpp/build
+./bin/llama-server -m ../../models/Bonsai-4B.gguf ...
+```
 
 ### Out of memory errors
 
